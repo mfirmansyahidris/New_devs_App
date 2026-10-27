@@ -1,6 +1,20 @@
 from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Dict, Any, List, Optional
+from zoneinfo import ZoneInfo
+
+from fastapi import HTTPException
+
+
+def month_bounds(month: int, year: int, property_timezone: str):
+    """Convert property-local month boundaries to UTC, including DST changes."""
+    zone = ZoneInfo(property_timezone)
+    start = datetime(year, month, 1, tzinfo=zone)
+    end = (
+        datetime(year + 1, 1, 1, tzinfo=zone) if month == 12
+        else datetime(year, month + 1, 1, tzinfo=zone)
+    )
+    return start.astimezone(timezone.utc), end.astimezone(timezone.utc)
 
 async def calculate_monthly_revenue(property_id: str, month: int, year: int, db_session=None) -> Decimal:
     """
@@ -56,12 +70,14 @@ async def calculate_total_revenue(
                 if (month is None) != (year is None):
                     raise ValueError("month and year must be supplied together")
                 if month is not None:
-                    # Reproduction baseline: UTC months, not the property's local timezone.
-                    params["start_date"] = datetime(year, month, 1, tzinfo=timezone.utc)
-                    params["end_date"] = (
-                        datetime(year + 1, 1, 1, tzinfo=timezone.utc) if month == 12
-                        else datetime(year, month + 1, 1, tzinfo=timezone.utc)
-                    )
+                    property_result = await session.execute(text("""
+                        SELECT timezone FROM properties
+                        WHERE id = :property_id AND tenant_id = :tenant_id
+                    """), params)
+                    property_timezone = property_result.scalar_one_or_none()
+                    if property_timezone is None:
+                        raise HTTPException(status_code=404, detail="Property not found")
+                    params["start_date"], params["end_date"] = month_bounds(month, year, property_timezone)
                     period_filter = "AND check_in_date >= :start_date AND check_in_date < :end_date"
 
                 query = text(f"""

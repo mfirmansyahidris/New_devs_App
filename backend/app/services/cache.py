@@ -15,8 +15,8 @@ async def get_revenue_summary(
     """
     cache_key = f"revenue:v2:{tenant_id}:{property_id}:all"
     if month is not None:
-        # Keep this UTC reproduction separate from all-time and timezone-correct caches.
-        cache_key = f"revenue:utc-repro:{tenant_id}:{property_id}:{year:04d}-{month:02d}"
+        # Ignore totals cached using the previous UTC-only month boundaries.
+        cache_key = f"revenue:local-month:v1:{tenant_id}:{property_id}:{year:04d}-{month:02d}"
     
     # Try to get from cache
     cached = await redis_client.get(cache_key)
